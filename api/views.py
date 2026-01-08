@@ -110,7 +110,10 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 HF_MODEL_URL = "https://router.huggingface.co/hf-inference/models/WinKawaks/vit-tiny-patch16-224"
-HF_API_TOKEN = "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"
+import os
+
+HF_API_TOKEN = os.environ.get("HF_API_TOKEN")
+
 
 
 @csrf_exempt
