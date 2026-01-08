@@ -85,12 +85,6 @@ WSGI_APPLICATION = 'doot.wsgi.application'
 # --------------------------------------------------
 # DATABASE (Django needs one)
 # --------------------------------------------------
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
-}
 
 # --------------------------------------------------
 # MONGODB (MongoEngine)
