@@ -385,7 +385,7 @@ def contractor_complaints(request):
             before_url = None
 
             if c.before_image and getattr(c.before_image, "grid_id", None):
-                before_url = f"http://127.0.0.1:8000/api/complaint/image/{c.id}/before/"
+                before_url = f"https://backend-009.onrender.com/api/complaint/image/{c.id}/before/"
 
             data.append({
                 "id": str(c.id),
@@ -484,7 +484,7 @@ def karmachari_complaints(request, karmachari_id):
         before_url = None
 
         if c.before_image and getattr(c.before_image, "grid_id", None):
-            before_url = f"http://127.0.0.1:8000/api/complaint/image/{c.id}/before/"
+            before_url = f"https://backend-009.onrender.com/api/complaint/image/{c.id}/before/"
 
         data.append({
             "id": str(c.id),
@@ -580,10 +580,10 @@ def contractor_completed_complaints(request, contractor_id):
         after_url = None
 
         if c.before_image and getattr(c.before_image, "grid_id", None):
-            before_url = f"http://127.0.0.1:8000/api/complaint/image/{c.id}/before/"
+            before_url = f"https://backend-009.onrender.com/api/complaint/image/{c.id}/before/"
 
         if c.after_image and getattr(c.after_image, "grid_id", None):
-            after_url = f"http://127.0.0.1:8000/api/complaint/image/{c.id}/after/"
+            after_url = f"https://backend-009.onrender.com/api/complaint/image/{c.id}/after/"
 
         data.append({
             "id": str(c.id),
@@ -630,10 +630,10 @@ def manager_pending_complaints(request):
         after_url = None
 
         if c.before_image and getattr(c.before_image, "grid_id", None):
-            before_url = f"http://127.0.0.1:8000/api/complaint/image/{c.id}/before/"
+            before_url = f"https://backend-009.onrender.com/api/complaint/image/{c.id}/before/"
 
         if c.after_image and getattr(c.after_image, "grid_id", None):
-            after_url = f"http://127.0.0.1:8000/api/complaint/image/{c.id}/after/"
+            after_url = f"https://backend-009.onrender.com/api/complaint/image/{c.id}/after/"
 
         data.append({
             "id": str(c.id),
