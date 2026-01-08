@@ -17,6 +17,59 @@ from .models import Complaint, ComplaintWorkflowLog, StaffUser, User
 import sib_api_v3_sdk
 from django.conf import settings
 
+
+
+
+
+
+import sib_api_v3_sdk
+from django.conf import settings
+
+def send_complaint_completed_email(email, username, complaint_no):
+    config = sib_api_v3_sdk.Configuration()
+    config.api_key["api-key"] = settings.BREVO_API_KEY
+
+    api = sib_api_v3_sdk.TransactionalEmailsApi(
+        sib_api_v3_sdk.ApiClient(config)
+    )
+
+    email_data = sib_api_v3_sdk.SendSmtpEmail(
+        subject=f"✅ Complaint #{complaint_no} Completed",
+        html_content=f"""
+        <h3>Hello {username},</h3>
+
+        <p>Good news 🎉</p>
+
+        <p>Your complaint has been <b>successfully resolved</b>.</p>
+
+        <p><b>Complaint No:</b> {complaint_no}</p>
+        <p><b>Status:</b> Completed</p>
+
+        <p>Thank you for helping keep our city clean.</p>
+
+        <br>
+        <p>Regards,<br><b>Bravo Support Team</b></p>
+        """,
+        sender={
+            "name": "Bravo Support",
+            "email": "project4950@gmail.com"  # ✅ VERIFIED SENDER
+        },
+        to=[{"email": email}],
+    )
+
+    response = api.send_transac_email(email_data)
+    print("Completion email response:", response)
+
+
+
+
+
+
+
+
+
+
+
 def send_complaint_confirmation_email(email, username, complaint_id, complaint_no):
     config = sib_api_v3_sdk.Configuration()
     config.api_key["api-key"] = settings.BREVO_API_KEY
@@ -651,6 +704,7 @@ def manager_pending_complaints(request):
 
 
 
+
 @api_view(["POST"])
 def manager_mark_completed(request):
     complaint_ids = request.data.get("complaint_ids", [])
@@ -659,32 +713,39 @@ def manager_mark_completed(request):
     completed = 0
 
     for cid in complaint_ids:
-        complaint = Complaint.objects(
-            id=cid,
-            status="SENT_TO_MANAGER"
-        ).first()
+        complaint = Complaint.objects(id=cid).first()
 
         if not complaint:
             continue
 
-        # Mark complaint DONE
+        # ✅ Mark complaint DONE
         complaint.status = "DONE"
         complaint.save()
 
-        # Award points to Safai Karmachari
-        karmachari = SafaiKarmachari.objects(
-            id=complaint.assigned_karmachari
-        ).first()
-
+        # ✅ FIXED: assigned_karmachari is already an object
+        karmachari = complaint.assigned_karmachari
         if karmachari:
             karmachari.points = (karmachari.points or 0) + points
             karmachari.save()
+
+        # ✅ Send completion email to citizen
+        try:
+            user = User.objects(id=complaint.citizen_id).first()
+            if user:
+                send_complaint_completed_email(
+                    email=user.email,
+                    username=user.username,
+                    complaint_no=complaint.complaint_no
+                )
+        except Exception as e:
+            print("Completion email error:", e)
 
         completed += 1
 
     return Response({
         "message": f"✅ {completed} complaint(s) marked as DONE"
     })
+
 
 
 @api_view(["GET"])
