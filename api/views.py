@@ -62,11 +62,14 @@ def send_complaint_completed_email(email, username, complaint_no):
 
 
 
+import logging
+from django.http import JsonResponse
 
+logger = logging.getLogger(__name__)
 
 def health_check(request):
-    return HttpResponse("OK", status=200)
-
+    logger.info("Health check endpoint hit")
+    return JsonResponse({"status": "ok"})
 
 
 
