@@ -64,7 +64,8 @@ def send_complaint_completed_email(email, username, complaint_no):
 
 
 
-
+def health_check(request):
+    return HttpResponse("OK", status=200)
 
 
 
