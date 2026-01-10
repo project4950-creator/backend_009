@@ -568,7 +568,7 @@ def karmachari_complaints(request, karmachari_id):
         return Response({"message": "Invalid karmachari ID"}, status=400)
 
     complaints = Complaint.objects(
-        assigned_karmachari=karmachari_oid,
+        assigned_karmachari__id=karmachari_oid,  # <-- FIXED here
         status__in=["IN PROGRESS", "WORKING"]
     )
 
@@ -582,10 +582,13 @@ def karmachari_complaints(request, karmachari_id):
             "id": str(c.id),
             "title": c.title,
             "area": c.area,
-            "before_image_url": before_url
+            "before_image_url": before_url,
+            "complaint_no": getattr(c, 'complaint_no', None),  # add complaint_no if you have it
+            "status": c.status  # optionally add status to response
         })
 
     return Response(data)
+
 
 
 
