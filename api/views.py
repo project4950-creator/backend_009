@@ -173,9 +173,8 @@ import requests
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-HF_MODEL_URL = "https://api-inference.huggingface.co/models/facebook/detr-resnet-50"
+HF_MODEL_URL = "https://router.huggingface.co/hf-inference/models/nateraw/mobilenetv2-trash-classification"
 HF_API_TOKEN = os.environ.get("HF_API_TOKEN")
-
 
 @csrf_exempt
 def detect_waste_type(request):
@@ -185,83 +184,74 @@ def detect_waste_type(request):
     if "image" not in request.FILES:
         return JsonResponse({"error": "Image file required"}, status=400)
 
-    if not HF_API_TOKEN:
-        return JsonResponse({"error": "HF_API_TOKEN not set on server"}, status=500)
-
-    image_file = request.FILES["image"]
+    image = request.FILES["image"]
 
     headers = {
         "Authorization": f"Bearer {HF_API_TOKEN}",
-        "Accept": "application/json",
-        "Content-Type": image_file.content_type or "image/jpeg",
+        "Accept": "application/json"
     }
 
     try:
         response = requests.post(
             HF_MODEL_URL,
             headers=headers,
-            data=image_file.read(),
-            params={"wait_for_model": "true"},
-            timeout=60
+            files={"file": image},
+            timeout=20
         )
     except Exception as e:
-        return JsonResponse({
-            "error": "Hugging Face request failed",
-            "details": str(e)
-        }, status=500)
+        return JsonResponse(
+            {"error": "HF request failed", "details": str(e)},
+            status=500
+        )
 
-    # ❗ Force JSON check
+    # HF ALWAYS returns JSON for this model
     try:
         predictions = response.json()
     except Exception:
-        return JsonResponse({
-            "error": "Invalid HF response (not JSON)",
-            "status_code": response.status_code,
-            "preview": response.text[:300]
-        }, status=500)
+        return JsonResponse(
+            {"error": "Invalid HF response", "raw": response.text[:300]},
+            status=500
+        )
 
-    # -------------------------------
-    # CATEGORY LOGIC
-    # -------------------------------
-    PLASTIC = ["plastic", "bottle", "bag"]
-    DRY = ["can", "metal", "paper", "cardboard"]
-    WET = ["food", "fruit", "vegetable"]
-    MEDICAL = ["mask", "syringe", "glove"]
+    # ---------------------------
+    # CATEGORY MAPPING
+    # ---------------------------
+    plastic = dry = wet = medical = 0
+
+    for p in predictions:
+        label = p.get("label", "").lower()
+        score = float(p.get("score", 0))
+
+        if score < 0.15:
+            continue
+
+        if "plastic" in label:
+            plastic += score
+        elif "paper" in label or "cardboard" in label:
+            dry += score
+        elif "food" in label or "organic" in label:
+            wet += score
+        elif "medical" in label or "mask" in label:
+            medical += score
 
     scores = {
-        "Plastic Waste": 0,
-        "Dry Waste": 0,
-        "Wet Waste": 0,
-        "Medical Waste": 0
+        "Plastic Waste": plastic,
+        "Dry Waste": dry,
+        "Wet Waste": wet,
+        "Medical Waste": medical
     }
 
-    labels_used = []
+    best = max(scores, key=scores.get)
 
-    for item in predictions:
-        label = item.get("label", "").lower()
-        score = float(item.get("score", 0))
-
-        labels_used.append(f"{label} ({round(score*100,2)}%)")
-
-        if any(k in label for k in PLASTIC):
-            scores["Plastic Waste"] += score
-        elif any(k in label for k in DRY):
-            scores["Dry Waste"] += score
-        elif any(k in label for k in WET):
-            scores["Wet Waste"] += score
-        elif any(k in label for k in MEDICAL):
-            scores["Medical Waste"] += score
-
-    best_label = max(scores, key=scores.get)
-
-    if scores[best_label] < 0.25:
-        best_label = "Uncertain"
+    if scores[best] == 0:
+        best = "Uncertain"
 
     return JsonResponse({
-        "waste_type": best_label,
-        "scores": {k: round(v, 4) for k, v in scores.items()},
-        "labels_used": labels_used
+        "waste_type": best,
+        "scores": scores,
+        "raw_predictions": predictions
     })
+
 
 
 
