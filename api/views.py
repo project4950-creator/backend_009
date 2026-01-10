@@ -220,18 +220,7 @@ def detect_waste_type(request):
         "Electronic Waste": 0,
         "Glass Waste": 0,
         "Metal Waste": 0,
-        "Textile Waste": 0,
-        "Rubber Waste": 0,
-        "Wood Waste": 0,
-        "Paper Waste": 0,
-        "Organic Waste": 0,
-        "Hazardous Waste": 0,
-        "Construction Waste": 0,
-        "Small E-Waste": 0,
-        "Textile & Leather": 0,
-        "Composite Waste": 0,
-        "Rubber & Foam": 0,
-        "Miscellaneous": 0
+        "Textile Waste": 0
     }
 
     all_labels = []
@@ -244,44 +233,22 @@ def detect_waste_type(request):
         # -------------------------------
         # Keyword mapping to categories
         # -------------------------------
-        if any(k in label for k in ["plastic", "packet", "wrapper", "bag", "straw", "bottle"]):
+        if any(k in label for k in ["plastic", "packet", "wrapper", "bag"]):
             scores["Plastic Waste"] += score
-        elif any(k in label for k in ["can", "dustbin", "dry", "cardboard"]):
+        elif any(k in label for k in ["can", "dustbin", "paper", "cardboard"]):
             scores["Dry Waste"] += score
         elif any(k in label for k in ["food", "fruit", "vegetable", "plate", "hot pot", "leftover"]):
             scores["Wet Waste"] += score
-        elif any(k in label for k in ["medical", "syringe", "mask", "glove", "bandage", "pill"]):
+        elif any(k in label for k in ["medical", "syringe", "mask", "glove"]):
             scores["Medical Waste"] += score
-        elif any(k in label for k in ["phone", "battery", "circuit", "charger", "electronics", "gadget"]):
+        elif any(k in label for k in ["phone", "battery", "circuit", "charger", "electronics"]):
             scores["Electronic Waste"] += score
-        elif any(k in label for k in ["glass", "bottle", "jar", "cup"]):
+        elif any(k in label for k in ["glass", "bottle", "jar"]):
             scores["Glass Waste"] += score
-        elif any(k in label for k in ["metal", "can", "foil", "pipe", "iron", "steel"]):
+        elif any(k in label for k in ["metal", "can", "foil"]):
             scores["Metal Waste"] += score
-        elif any(k in label for k in ["cloth", "fabric", "shirt", "textile", "cotton", "towel"]):
+        elif any(k in label for k in ["cloth", "fabric", "shirt", "textile"]):
             scores["Textile Waste"] += score
-        elif any(k in label for k in ["rubber", "tyre", "eraser", "band"]):
-            scores["Rubber Waste"] += score
-        elif any(k in label for k in ["wood", "stick", "plywood", "bamboo", "timber"]):
-            scores["Wood Waste"] += score
-        elif any(k in label for k in ["paper", "newspaper", "magazine", "notebook", "envelope"]):
-            scores["Paper Waste"] += score
-        elif any(k in label for k in ["organic", "leaf", "garden", "compost", "grass"]):
-            scores["Organic Waste"] += score
-        elif any(k in label for k in ["chemical", "paint", "acid", "hazard", "toxic"]):
-            scores["Hazardous Waste"] += score
-        elif any(k in label for k in ["brick", "cement", "concrete", "tile", "construction"]):
-            scores["Construction Waste"] += score
-        elif any(k in label for k in ["remote", "plug", "adapter", "small electronics"]):
-            scores["Small E-Waste"] += score
-        elif any(k in label for k in ["shoe", "belt", "leather", "bag"]):
-            scores["Textile & Leather"] += score
-        elif any(k in label for k in ["composite", "mix", "multi-material"]):
-            scores["Composite Waste"] += score
-        elif any(k in label for k in ["foam", "sponge", "mattress", "cushion"]):
-            scores["Rubber & Foam"] += score
-        else:
-            scores["Miscellaneous"] += score
 
     # -------------------------------
     # Determine final category
