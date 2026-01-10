@@ -167,14 +167,19 @@ def create_complaint(request):
     
 
 
-
 import os
+import time
 import requests
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 HF_MODEL_URL = "https://router.huggingface.co/hf-inference/models/nateraw/mobilenetv2-trash-classification"
 HF_API_TOKEN = os.environ.get("HF_API_TOKEN")
+
+HEADERS = {
+    "Authorization": f"Bearer {HF_API_TOKEN}",
+    "Accept": "application/json"
+}
 
 @csrf_exempt
 def detect_waste_type(request):
@@ -186,37 +191,46 @@ def detect_waste_type(request):
 
     image = request.FILES["image"]
 
-    headers = {
-        "Authorization": f"Bearer {HF_API_TOKEN}",
-        "Accept": "application/json"
-    }
-
-    try:
-        response = requests.post(
+    def call_hf():
+        return requests.post(
             HF_MODEL_URL,
-            headers=headers,
+            headers=HEADERS,
             files={"file": image},
-            timeout=20
-        )
-    except Exception as e:
-        return JsonResponse(
-            {"error": "HF request failed", "details": str(e)},
-            status=500
+            timeout=25
         )
 
-    # HF ALWAYS returns JSON for this model
+    # 🔁 First attempt
+    response = call_hf()
+
+    # 🔁 HF cold-start retry
+    if response.status_code == 503:
+        time.sleep(3)
+        response = call_hf()
+
+    content_type = response.headers.get("content-type", "")
+
+    # ❌ NOT JSON → return safe error
+    if "application/json" not in content_type:
+        return JsonResponse({
+            "error": "HF returned non-JSON response",
+            "status_code": response.status_code,
+            "content_type": content_type,
+            "preview": response.text[:300]
+        }, status=500)
+
+    # ✅ SAFE JSON PARSE
     try:
         predictions = response.json()
-    except Exception:
-        return JsonResponse(
-            {"error": "Invalid HF response", "raw": response.text[:300]},
-            status=500
-        )
+    except Exception as e:
+        return JsonResponse({
+            "error": "JSON parse failed",
+            "details": str(e)
+        }, status=500)
 
     # ---------------------------
-    # CATEGORY MAPPING
+    # CLASSIFICATION LOGIC
     # ---------------------------
-    plastic = dry = wet = medical = 0
+    plastic = dry = wet = medical = 0.0
 
     for p in predictions:
         label = p.get("label", "").lower()
@@ -235,10 +249,10 @@ def detect_waste_type(request):
             medical += score
 
     scores = {
-        "Plastic Waste": plastic,
-        "Dry Waste": dry,
-        "Wet Waste": wet,
-        "Medical Waste": medical
+        "Plastic Waste": round(plastic, 4),
+        "Dry Waste": round(dry, 4),
+        "Wet Waste": round(wet, 4),
+        "Medical Waste": round(medical, 4)
     }
 
     best = max(scores, key=scores.get)
@@ -248,8 +262,7 @@ def detect_waste_type(request):
 
     return JsonResponse({
         "waste_type": best,
-        "scores": scores,
-        "raw_predictions": predictions
+        "scores": scores
     })
 
 
