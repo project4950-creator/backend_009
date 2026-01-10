@@ -210,47 +210,86 @@ def detect_waste_type(request):
     predictions = response.json()
 
     # -------------------------------
-    # Category keywords mapping
+    # Score accumulators
     # -------------------------------
-    CATEGORY_KEYWORDS = {
-        "Plastic Waste": ["plastic", "wrapper", "bag", "packet", "bottle"],
-        "Dry Waste": ["paper", "cardboard", "can", "dustbin", "box"],
-        "Wet Waste": ["food", "fruit", "vegetable", "leftover", "plate", "hot pot"],
-        "Medical Waste": ["syringe", "mask", "glove", "medical", "bandage"],
-        "Electronic Waste": ["phone", "battery", "circuit", "charger", "electronics"],
-        "Glass Waste": ["glass", "bottle", "jar", "cup"],
-        "Metal Waste": ["metal", "can", "foil", "tin"],
-        "Textile Waste": ["cloth", "fabric", "shirt", "textile"]
+    scores = {
+        "Plastic Waste": 0,
+        "Dry Waste": 0,
+        "Wet Waste": 0,
+        "Medical Waste": 0,
+        "Electronic Waste": 0,
+        "Glass Waste": 0,
+        "Metal Waste": 0,
+        "Textile Waste": 0,
+        "Rubber Waste": 0,
+        "Wood Waste": 0,
+        "Paper Waste": 0,
+        "Organic Waste": 0,
+        "Hazardous Waste": 0,
+        "Construction Waste": 0,
+        "Small E-Waste": 0,
+        "Textile & Leather": 0,
+        "Composite Waste": 0,
+        "Rubber & Foam": 0,
+        "Miscellaneous": 0
     }
 
-    scores = {cat: 0 for cat in CATEGORY_KEYWORDS.keys()}
     all_labels = []
 
-    # -------------------------------
-    # Map labels to all matching categories
-    # -------------------------------
     for item in predictions:
         label = item.get("label", "").lower()
         score = float(item.get("score", 0))
         all_labels.append(f"{label.title()} - {round(score * 100, 2)}")
 
-        # Add score to all categories this label belongs to
-        for category, keywords in CATEGORY_KEYWORDS.items():
-            if any(kw in label for kw in keywords):
-                scores[category] += score
+        # -------------------------------
+        # Keyword mapping to categories
+        # -------------------------------
+        if any(k in label for k in ["plastic", "packet", "wrapper", "bag", "straw", "bottle"]):
+            scores["Plastic Waste"] += score
+        elif any(k in label for k in ["can", "dustbin", "dry", "cardboard"]):
+            scores["Dry Waste"] += score
+        elif any(k in label for k in ["food", "fruit", "vegetable", "plate", "hot pot", "leftover"]):
+            scores["Wet Waste"] += score
+        elif any(k in label for k in ["medical", "syringe", "mask", "glove", "bandage", "pill"]):
+            scores["Medical Waste"] += score
+        elif any(k in label for k in ["phone", "battery", "circuit", "charger", "electronics", "gadget"]):
+            scores["Electronic Waste"] += score
+        elif any(k in label for k in ["glass", "bottle", "jar", "cup"]):
+            scores["Glass Waste"] += score
+        elif any(k in label for k in ["metal", "can", "foil", "pipe", "iron", "steel"]):
+            scores["Metal Waste"] += score
+        elif any(k in label for k in ["cloth", "fabric", "shirt", "textile", "cotton", "towel"]):
+            scores["Textile Waste"] += score
+        elif any(k in label for k in ["rubber", "tyre", "eraser", "band"]):
+            scores["Rubber Waste"] += score
+        elif any(k in label for k in ["wood", "stick", "plywood", "bamboo", "timber"]):
+            scores["Wood Waste"] += score
+        elif any(k in label for k in ["paper", "newspaper", "magazine", "notebook", "envelope"]):
+            scores["Paper Waste"] += score
+        elif any(k in label for k in ["organic", "leaf", "garden", "compost", "grass"]):
+            scores["Organic Waste"] += score
+        elif any(k in label for k in ["chemical", "paint", "acid", "hazard", "toxic"]):
+            scores["Hazardous Waste"] += score
+        elif any(k in label for k in ["brick", "cement", "concrete", "tile", "construction"]):
+            scores["Construction Waste"] += score
+        elif any(k in label for k in ["remote", "plug", "adapter", "small electronics"]):
+            scores["Small E-Waste"] += score
+        elif any(k in label for k in ["shoe", "belt", "leather", "bag"]):
+            scores["Textile & Leather"] += score
+        elif any(k in label for k in ["composite", "mix", "multi-material"]):
+            scores["Composite Waste"] += score
+        elif any(k in label for k in ["foam", "sponge", "mattress", "cushion"]):
+            scores["Rubber & Foam"] += score
+        else:
+            scores["Miscellaneous"] += score
 
     # -------------------------------
-    # Final decision: highest scoring category
+    # Determine final category
     # -------------------------------
     category = max(scores, key=lambda k: scores[k])
 
-    # Optionally return top 2-3 categories for mixed waste
-    top_categories = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-    top_categories = [cat for cat, s in top_categories if s > 0][:3]
-
     return JsonResponse({
         "waste_type": category,
-        "top_categories": top_categories,
         "debug_scores": {k: round(v, 4) for k, v in scores.items()},
         "labels_detected": all_labels
     })
