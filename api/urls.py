@@ -20,5 +20,8 @@ urlpatterns = [
     path("manager/complaints/", manager_pending_complaints),
     path("manager/mark-completed/", manager_mark_completed),
     path("citizen/complaints/<str:citizen_id>/", citizen_complaints),
+    path("admin/complaints/", views.admin_complaints_list),
+    path("admin/complaints/<str:complaint_id>/", views.admin_delete_complaint),
+    path("admin/karmacharis/", views.admin_karmachari_list),
 
 ]
