@@ -178,17 +178,22 @@ def detect_waste_type(request):
     if "image" not in request.FILES:
         return JsonResponse({"error": "Image required"}, status=400)
 
-    image = request.FILES["image"]
+    image_file = request.FILES["image"]
+
+    # ✅ Convert image to base64
+    image_bytes = image_file.read()
+    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
 
     HF_MODEL_URL = "https://router.huggingface.co/hf-inference/models/facebook/owlvit-base-patch32"
 
     headers = {
-        "Authorization": f"Bearer {HF_API_TOKEN}"
+        "Authorization": f"Bearer {HF_API_TOKEN}",
+        "Content-Type": "application/json"
     }
 
     payload = {
         "inputs": {
-            "image": image.read(),
+            "image": image_base64,
             "text_queries": [
                 "plastic waste",
                 "food waste",
@@ -212,37 +217,44 @@ def detect_waste_type(request):
     )
 
     if response.status_code != 200:
-        return JsonResponse({"error": "HF API failed", "details": response.text}, status=500)
+        return JsonResponse(
+            {"error": "HF API failed", "details": response.text},
+            status=500
+        )
 
     detections = response.json()
 
-    scores = {
-        "plastic": 0,
-        "wet": 0,
-        "dry": 0,
-        "medical": 0
-    }
-
+    # ---------------------------
+    # SCORE ACCUMULATION
+    # ---------------------------
+    scores = {"plastic": 0, "wet": 0, "dry": 0, "medical": 0}
     objects = []
 
     for d in detections:
-        label = d["label"].lower()
-        score = float(d["score"])
+        label = d.get("label", "").lower()
+        score = float(d.get("score", 0))
+
+        # Ignore very low confidence noise
+        if score < 0.15:
+            continue
 
         objects.append({
             "label": label,
             "score": round(score, 3)
         })
 
-        if "medical" in label or "syringe" in label or "mask" in label or "glove" in label:
+        if any(k in label for k in ["medical", "syringe", "mask", "glove"]):
             scores["medical"] += score
         elif "plastic" in label:
             scores["plastic"] += score
-        elif "food" in label or "vegetable" in label:
+        elif any(k in label for k in ["food", "vegetable"]):
             scores["wet"] += score
         else:
             scores["dry"] += score
 
+    # ---------------------------
+    # FINAL DECISION
+    # ---------------------------
     final_type = max(scores, key=scores.get).title() + " Waste"
 
     return JsonResponse({
@@ -250,7 +262,6 @@ def detect_waste_type(request):
         "objects_detected": objects,
         "category_scores": {k: round(v, 3) for k, v in scores.items()}
     })
-
 
 
 import zipfile
