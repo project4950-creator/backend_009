@@ -165,8 +165,10 @@ def create_complaint(request):
 
 
     
+import os
+import requests
+from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-
 
 @csrf_exempt
 def detect_waste_type(request):
