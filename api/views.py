@@ -119,7 +119,7 @@ def create_complaint(request):
     normalized_area = normalize_area(area)
 
     contractor = StaffUser.objects(
-        user.role="CONTRACTOR").filter(
+        user_role="CONTRACTOR").filter(
         assigned_area__icontains=normalized_area
     ).first()
 
@@ -439,7 +439,7 @@ from .models import Complaint
 @api_view(["GET"])
 def contractor_complaints(request, contractor_id):
     try:
-        complaints = Complaint.objects(assigned_contractor=contractor_id, assigned_karmachari=None)
+        complaints = Complaint.objects(assigned_contractor=ObjectId(contractor_id), assigned_karmachari=None)
 
         data = []
 
@@ -561,7 +561,7 @@ from .models import Complaint
 @api_view(["GET"])
 def karmachari_complaints(request, karmachari_id):
     complaints = Complaint.objects(
-        assigned_karmachari=karmachari_id,
+        assigned_karmachari=ObjectId(karmachari_id),
         status="IN PROGRESS"
     )
 
@@ -596,7 +596,7 @@ def submit_karmachari_work(request):
     if not all([complaint_id, karmachari_id, image]):
         return Response({"message": "Missing data"}, status=400)
 
-    complaint = Complaint.objects(id=complaint_id).first()
+    complaint = Complaint.objects(id=ObjectId(complaint_id)).first()
     karmachari = SafaiKarmachari.objects(id=karmachari_id).first()
 
     if not complaint or not karmachari:
@@ -630,7 +630,7 @@ def submit_karmachari_work(request):
             status=400
         )
 
-    complaint = Complaint.objects(id=complaint_id).first()
+    complaint = Complaint.objects(id=ObjectId(complaint_id)).first()
     karmachari = SafaiKarmachari.objects(id=karmachari_id).first()
 
     if not complaint or not karmachari:
@@ -657,7 +657,7 @@ def submit_karmachari_work(request):
 @api_view(["GET"])
 def contractor_completed_complaints(request, contractor_id):
     complaints = Complaint.objects(
-        assigned_contractor=contractor_id,
+        assigned_contractor=ObjectId(contractor_id),
         status="SUBMITTED"
     )
 
@@ -690,7 +690,7 @@ def submit_to_manager(request):
     updated = 0
     for cid in complaint_ids:
         complaint = Complaint.objects(
-            id=cid,
+            id=ObjectId(cid),
             status="SUBMITTED"
         ).first()
 
@@ -847,7 +847,7 @@ def admin_complaints_list(request):
 
 @api_view(["DELETE"])
 def admin_delete_complaint(request, complaint_id):
-    complaint = Complaint.objects(id=complaint_id).first()
+    complaint = Complaint.objects(id=ObjectId(complaint_id)).first()
 
     if not complaint:
         return Response(
