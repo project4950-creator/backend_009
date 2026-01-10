@@ -562,16 +562,19 @@ from .models import Complaint
 
 @api_view(["GET"])
 def karmachari_complaints(request, karmachari_id):
+    try:
+        karmachari_oid = ObjectId(karmachari_id)
+    except Exception:
+        return Response({"message": "Invalid karmachari ID"}, status=400)
+
     complaints = Complaint.objects(
-        assigned_karmachari=karmachari_id,
-        status="WORKING"
+        assigned_karmachari=karmachari_oid,
+        status__in=["IN PROGRESS", "WORKING"]
     )
 
     data = []
-
     for c in complaints:
         before_url = None
-
         if c.before_image and getattr(c.before_image, "grid_id", None):
             before_url = f"https://backend-009.onrender.com/api/complaint/image/{c.id}/before/"
 
