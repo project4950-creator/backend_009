@@ -564,7 +564,7 @@ from .models import Complaint
 def karmachari_complaints(request, karmachari_id):
     complaints = Complaint.objects(
         assigned_karmachari=karmachari_id,
-        status="IN PROGRESS"
+        status="WORKING"
     )
 
     data = []
