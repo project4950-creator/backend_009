@@ -173,12 +173,10 @@ import requests
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-HF_MODEL_URL = "https://router.huggingface.co/hf-inference/models/keremberke/yolov8n-waste-detection"
-
-import os
+# ✅ STABLE HF MODEL (lighter + reliable)
+HF_MODEL_URL = "https://api-inference.huggingface.co/models/facebook/detr-resnet-50"
 
 HF_API_TOKEN = os.environ.get("HF_API_TOKEN")
-
 
 
 @csrf_exempt
@@ -193,90 +191,102 @@ def detect_waste_type(request):
 
     headers = {
         "Authorization": f"Bearer {HF_API_TOKEN}",
-        "Content-Type": image_file.content_type or "image/jpeg"
+        "Content-Type": image_file.content_type or "image/jpeg",
     }
 
-    response = requests.post(
-        HF_MODEL_URL,
-        headers=headers,
-        data=image_file.read(),
-        timeout=60
-    )
-
     try:
-        predictions = response.json()
-    except Exception:
-        return JsonResponse(
-            {"error": "Invalid HF response", "raw": response.text},
-            status=500
+        response = requests.post(
+            HF_MODEL_URL,
+            headers=headers,
+            data=image_file.read(),
+            timeout=40
         )
-
-    # 🔴 HF model still loading
-    if isinstance(predictions, dict) and "error" in predictions:
+    except requests.exceptions.RequestException as e:
         return JsonResponse({
-            "error": "Model loading on HuggingFace, try again in 10 seconds"
-        }, status=503)
-
-    # 🔴 MUST be list (YOLO returns list of detections)
-    if not isinstance(predictions, list):
-        return JsonResponse({
-            "error": "Unexpected HF response format",
-            "response": predictions
+            "error": "Hugging Face request failed",
+            "details": str(e)
         }, status=500)
 
     # -------------------------------
-    # KEYWORDS
+    # ✅ SAFETY CHECK: JSON ONLY
     # -------------------------------
+    content_type = response.headers.get("content-type", "")
+
+    if "application/json" not in content_type:
+        return JsonResponse({
+            "error": "Invalid HF response (not JSON)",
+            "status_code": response.status_code,
+            "preview": response.text[:300]
+        }, status=500)
+
+    try:
+        predictions = response.json()
+    except Exception as e:
+        return JsonResponse({
+            "error": "Failed to parse HF JSON",
+            "details": str(e),
+            "raw": response.text[:300]
+        }, status=500)
+
+    # -------------------------------
+    # CONFIG
+    # -------------------------------
+    CONFIDENCE_THRESHOLD = 0.2
+
+    PLASTIC = ["plastic", "bottle", "bag", "wrapper", "packet"]
+    DRY = ["can", "tin", "metal", "glass", "paper", "cardboard"]
+    WET = ["food", "vegetable", "fruit", "banana", "leftover"]
+    MEDICAL = ["medical", "syringe", "mask", "glove", "bandage"]
+
     plastic_score = 0.0
     dry_score = 0.0
     wet_score = 0.0
     medical_score = 0.0
 
-    detected_objects = []
+    labels_used = []
 
-    for obj in predictions:
-        label = obj.get("label", "").lower()
-        score = float(obj.get("score", 0))
+    for item in predictions:
+        label = item.get("label", "").lower()
+        score = float(item.get("score", 0))
 
-        if score < 0.2:
+        if score < CONFIDENCE_THRESHOLD:
             continue
 
-        detected_objects.append(f"{label} ({round(score*100,1)}%)")
+        labels_used.append(f"{label} ({round(score*100,2)}%)")
 
-        if "plastic" in label or "bottle" in label or "bag" in label:
-            plastic_score += score
-
-        elif label in ["paper", "metal", "glass", "cardboard"]:
+        if any(k in label for k in PLASTIC):
+            plastic_score += score * 1.2
+        elif any(k in label for k in DRY):
             dry_score += score
-
-        elif label in ["food", "organic", "banana", "vegetable"]:
-            wet_score += score
-
-        elif label in ["medical", "mask", "syringe", "glove"]:
-            medical_score += score
+        elif any(k in label for k in WET):
+            wet_score += score * 1.1
+        elif any(k in label for k in MEDICAL):
+            medical_score += score * 1.5
 
     scores = {
         "Plastic Waste": plastic_score,
         "Dry Waste": dry_score,
         "Wet Waste": wet_score,
-        "Medical Waste": medical_score
+        "Medical Waste": medical_score,
     }
 
-    best_category = max(scores, key=scores.get)
-    best_score = scores[best_category]
+    best_label = max(scores, key=scores.get)
+    best_score = scores[best_label]
 
     if best_score < 0.25:
-        best_category = "Uncertain"
+        final_category = "Uncertain"
+    else:
+        final_category = best_label
 
     return JsonResponse({
-        "waste_type": best_category,
+        "waste_type": final_category,
         "scores": {
-            "plastic": round(plastic_score, 3),
-            "dry": round(dry_score, 3),
-            "wet": round(wet_score, 3),
-            "medical": round(medical_score, 3)
+            "plastic": round(plastic_score, 4),
+            "dry": round(dry_score, 4),
+            "wet": round(wet_score, 4),
+            "medical": round(medical_score, 4),
         },
-        "detected_objects": detected_objects
+        "labels_used": labels_used
     })
 
 
