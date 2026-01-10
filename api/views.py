@@ -562,6 +562,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from .models import Complaint
 
+@api_view(["GET"])
 def karmachari_complaints(request, karmachari_id):
     try:
         karmachari_oid = ObjectId(karmachari_id)
