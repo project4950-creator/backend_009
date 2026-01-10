@@ -25,6 +25,9 @@ from django.conf import settings
 import sib_api_v3_sdk
 from django.conf import settings
 
+def normalize_area(area: str):
+    return area.lower().replace(" ", "").replace("school", "")
+
 def send_complaint_completed_email(email, username, complaint_no):
     config = sib_api_v3_sdk.Configuration()
     config.api_key["api-key"] = settings.BREVO_API_KEY
@@ -113,9 +116,11 @@ def create_complaint(request):
 
     area = area.strip()
 
+    normalized_area = normalize_area(area)
+
     contractor = StaffUser.objects(
-        user_role="CONTRACTOR",
-        assigned_area__iexact=area
+        user.role="CONTRACTOR").filter(
+        assigned_area__icontains=normalized_area
     ).first()
 
     if not contractor:
@@ -432,9 +437,9 @@ from rest_framework.response import Response
 from .models import Complaint
 
 @api_view(["GET"])
-def contractor_complaints(request):
+def contractor_complaints(request, contractor_id):
     try:
-        complaints = Complaint.objects(assigned_karmachari=None)
+        complaints = Complaint.objects(assigned_contractor=contractor_id, assigned_karmachari=None)
 
         data = []
 
@@ -442,10 +447,11 @@ def contractor_complaints(request):
             before_url = None
 
             if c.before_image and getattr(c.before_image, "grid_id", None):
-                before_url = f"https://backend-009.onrender.com/api/complaint/image/{c.id}/before/"
+                before_url = (f"https://backend-009.onrender.com/api/complaint/image/{c.id}/before/")
 
             data.append({
                 "id": str(c.id),
+                "complaint_no": c.complaint_no,
                 "title": c.title,
                 "area": c.area,
                 "status": c.status,
@@ -463,7 +469,25 @@ def contractor_complaints(request):
         )
 
 
+def get_area_key(area: str):
+    """
+    Normalize all area names to stable keys
+    """
+    if not area:
+        return ""
 
+    area = area.lower()
+
+    if "dn" in area:
+        return "dn"
+    if "mb" in area:
+        return "mb"
+    if "svp" in area:
+        return "svp"
+    if "mahatma" in area or "gandhi" in area:
+        return "mgv"
+
+    return area.replace(" ", "")
 
 
 from rest_framework.decorators import api_view
@@ -475,18 +499,21 @@ from .models import Complaint, SafaiKarmachari
 @api_view(["POST"])
 def assign_complaints(request):
     complaint_ids = request.data.get("complaint_ids", [])
-    print("RECEIVED IDS:", complaint_ids)
+    
 
     if not complaint_ids:
-        return Response(
-            {"message": "No complaints selected"},
-            status=400
-        )
+        return Response({"message": "No complaints selected"}, status=400)
 
     assigned_count = 0
 
     for cid in complaint_ids:
         # 1️⃣ Get complaint (not already assigned)
+
+        try:
+            cid = ObjectId(cid)   # ✅ CRITICAL FIX
+        except Exception:
+            continue
+        
         complaint = Complaint.objects(
             id=cid,
             assigned_karmachari=None
@@ -496,10 +523,13 @@ def assign_complaints(request):
             continue
 
         # 2️⃣ Find FREE karmachari in same area
-        karmachari = SafaiKarmachari.objects(
-            status="FREE",
-            area__iexact=complaint.area
-        ).first()
+        complaint_area_key = get_area_key(complaint.area)
+
+        karmachari = None
+        for k in SafaiKarmachari.objects(status="FREE"):
+            if get_area_key(k.area) == complaint_area_key:
+                karmachari = k
+                break
 
         if not karmachari:
             continue
@@ -779,3 +809,95 @@ def get_next_complaint_no():
         inc__value=1
     )
     return counter.value
+
+
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from .models import Complaint, SafaiKarmachari
+
+@api_view(["GET"])
+def admin_complaints_list(request):
+    complaints = Complaint.objects().order_by("-complaint_date")
+
+    data = []
+
+    for c in complaints:
+        karmachari = None
+
+        if c.assigned_karmachari:
+            karmachari = SafaiKarmachari.objects(
+                id=c.assigned_karmachari.id
+            ).first()
+
+        data.append({
+            "id": str(c.id),
+            "complaint_no": c.complaint_no,
+            "title": c.title,
+            "area": c.area,
+            "status": c.status,
+            "karmachari": {
+                "id": str(karmachari.id),
+                "name": karmachari.username
+            } if karmachari else None
+        })
+
+    return Response(data)
+
+
+
+@api_view(["DELETE"])
+def admin_delete_complaint(request, complaint_id):
+    complaint = Complaint.objects(id=complaint_id).first()
+
+    if not complaint:
+        return Response(
+            {"message": "Complaint not found"},
+            status=404
+        )
+
+    # ✅ If complaint has assigned karmachari → FREE him
+    if complaint.assigned_karmachari:
+        karmachari = SafaiKarmachari.objects(
+            id=complaint.assigned_karmachari.id
+        ).first()
+
+        if karmachari:
+            karmachari.status = "FREE"
+            karmachari.save()
+
+    # ❌ Delete complaint
+    complaint.delete()
+
+    return Response({
+        "message": "Complaint deleted and karmachari freed"
+    })
+
+
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from .models import SafaiKarmachari, Complaint
+
+@api_view(["GET"])
+def admin_karmachari_list(request):
+    karmacharis = SafaiKarmachari.objects()
+
+    data = []
+
+    for k in karmacharis:
+        complaint = Complaint.objects(
+            assigned_karmachari=k.id,
+            status="IN PROGRESS"
+        ).first()
+
+        data.append({
+            "id": str(k.id),
+            "name": k.username,
+            "phone": k.phone_no,
+            "area": k.area,
+            "status": k.status,
+            "current_complaint": {
+                "complaint_no": complaint.complaint_no
+            } if complaint else None
+        })
+
+    return Response(data)
