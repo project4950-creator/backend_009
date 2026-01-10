@@ -200,62 +200,61 @@ def detect_waste_type(request):
         HF_MODEL_URL,
         headers=headers,
         data=image_file.read(),
-        timeout=30
+        timeout=60
     )
 
-    if response.status_code != 200:
+    try:
+        predictions = response.json()
+    except Exception:
         return JsonResponse(
-            {"error": "Hugging Face API failed", "details": response.text},
+            {"error": "Invalid HF response", "raw": response.text},
             status=500
         )
 
-    predictions = response.json()
+    # 🔴 HF model still loading
+    if isinstance(predictions, dict) and "error" in predictions:
+        return JsonResponse({
+            "error": "Model loading on HuggingFace, try again in 10 seconds"
+        }, status=503)
+
+    # 🔴 MUST be list (YOLO returns list of detections)
+    if not isinstance(predictions, list):
+        return JsonResponse({
+            "error": "Unexpected HF response format",
+            "response": predictions
+        }, status=500)
 
     # -------------------------------
-    # CONFIG
-    # -------------------------------
-    CONFIDENCE_THRESHOLD = 0.15
-
-    PLASTIC_KEYWORDS = ["plastic", "bottle", "bag", "wrapper", "packet", "polythene"]
-    DRY_KEYWORDS = ["can", "tin", "metal", "glass", "paper", "cardboard"]
-    WET_KEYWORDS = ["food", "vegetable", "fruit", "banana", "leftover", "plate"]
-    MEDICAL_KEYWORDS = ["medical", "syringe", "mask", "glove", "bandage"]
-
-    # -------------------------------
-    # Score accumulators
+    # KEYWORDS
     # -------------------------------
     plastic_score = 0.0
     dry_score = 0.0
     wet_score = 0.0
     medical_score = 0.0
 
-    labels_used = []
+    detected_objects = []
 
-    for item in predictions:
-        label = item.get("label", "").lower()
-        score = float(item.get("score", 0))
+    for obj in predictions:
+        label = obj.get("label", "").lower()
+        score = float(obj.get("score", 0))
 
-        # ❌ ignore low confidence predictions
-        if score < CONFIDENCE_THRESHOLD:
+        if score < 0.2:
             continue
 
-        labels_used.append(f"{label} ({round(score*100,2)}%)")
+        detected_objects.append(f"{label} ({round(score*100,1)}%)")
 
-        if any(k in label for k in PLASTIC_KEYWORDS):
-            plastic_score += score * 1.2
+        if "plastic" in label or "bottle" in label or "bag" in label:
+            plastic_score += score
 
-        elif any(k in label for k in DRY_KEYWORDS):
+        elif label in ["paper", "metal", "glass", "cardboard"]:
             dry_score += score
 
-        elif any(k in label for k in WET_KEYWORDS):
-            wet_score += score * 1.1
+        elif label in ["food", "organic", "banana", "vegetable"]:
+            wet_score += score
 
-        elif any(k in label for k in MEDICAL_KEYWORDS):
-            medical_score += score * 1.5
+        elif label in ["medical", "mask", "syringe", "glove"]:
+            medical_score += score
 
-    # -------------------------------
-    # Final decision
-    # -------------------------------
     scores = {
         "Plastic Waste": plastic_score,
         "Dry Waste": dry_score,
@@ -263,25 +262,21 @@ def detect_waste_type(request):
         "Medical Waste": medical_score
     }
 
-    sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-    best_label, best_score = sorted_scores[0]
-    second_score = sorted_scores[1][1]
+    best_category = max(scores, key=scores.get)
+    best_score = scores[best_category]
 
-    # ❗ Safety check
-    if best_score < 0.2 or (best_score - second_score) < 0.05:
-        final_category = "Uncertain"
-    else:
-        final_category = best_label
+    if best_score < 0.25:
+        best_category = "Uncertain"
 
     return JsonResponse({
-        "waste_type": final_category,
+        "waste_type": best_category,
         "scores": {
-            "plastic": round(plastic_score, 4),
-            "dry": round(dry_score, 4),
-            "wet": round(wet_score, 4),
-            "medical": round(medical_score, 4)
+            "plastic": round(plastic_score, 3),
+            "dry": round(dry_score, 3),
+            "wet": round(wet_score, 3),
+            "medical": round(medical_score, 3)
         },
-        "labels_used": labels_used
+        "detected_objects": detected_objects
     })
 
 
