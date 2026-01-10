@@ -115,12 +115,13 @@ def create_complaint(request):
         return Response({"message": "Missing required fields"}, status=400)
 
     area = area.strip()
-
     normalized_area = normalize_area(area)
 
+    # ✅ FIXED: syntax + use proper field name
     contractor = StaffUser.objects(
-        user.role="CONTRACTOR").filter(
-        assigned_area__icontains=normalized_area
+        user_role="CONTRACTOR"
+    ).filter(
+        assigned_area__icontains=area  # or normalized_area if DB normalized
     ).first()
 
     if not contractor:
@@ -130,7 +131,7 @@ def create_complaint(request):
         )
 
     complaint = Complaint(
-        complaint_no=get_next_complaint_no(), 
+        complaint_no=get_next_complaint_no(),
         citizen_id=citizen_id,
         title=title,
         description=description,
@@ -142,7 +143,7 @@ def create_complaint(request):
     )
     complaint.save()
 
-    # ✅ SEND EMAIL (ONLY ADDITION)
+    # ✅ SEND EMAIL
     try:
         user = User.objects(id=citizen_id).first()
         if user:
@@ -161,6 +162,7 @@ def create_complaint(request):
         "complaint_no": complaint.complaint_no,
         "contractor": contractor.full_name
     }, status=201)
+
 
     
 
