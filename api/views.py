@@ -173,9 +173,7 @@ import requests
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-# ✅ STABLE HF MODEL (lighter + reliable)
 HF_MODEL_URL = "https://api-inference.huggingface.co/models/facebook/detr-resnet-50"
-
 HF_API_TOKEN = os.environ.get("HF_API_TOKEN")
 
 
@@ -187,10 +185,14 @@ def detect_waste_type(request):
     if "image" not in request.FILES:
         return JsonResponse({"error": "Image file required"}, status=400)
 
+    if not HF_API_TOKEN:
+        return JsonResponse({"error": "HF_API_TOKEN not set on server"}, status=500)
+
     image_file = request.FILES["image"]
 
     headers = {
         "Authorization": f"Bearer {HF_API_TOKEN}",
+        "Accept": "application/json",
         "Content-Type": image_file.content_type or "image/jpeg",
     }
 
@@ -199,49 +201,39 @@ def detect_waste_type(request):
             HF_MODEL_URL,
             headers=headers,
             data=image_file.read(),
-            timeout=40
+            params={"wait_for_model": "true"},
+            timeout=60
         )
-    except requests.exceptions.RequestException as e:
+    except Exception as e:
         return JsonResponse({
             "error": "Hugging Face request failed",
             "details": str(e)
         }, status=500)
 
-    # -------------------------------
-    # ✅ SAFETY CHECK: JSON ONLY
-    # -------------------------------
-    content_type = response.headers.get("content-type", "")
-
-    if "application/json" not in content_type:
+    # ❗ Force JSON check
+    try:
+        predictions = response.json()
+    except Exception:
         return JsonResponse({
             "error": "Invalid HF response (not JSON)",
             "status_code": response.status_code,
             "preview": response.text[:300]
         }, status=500)
 
-    try:
-        predictions = response.json()
-    except Exception as e:
-        return JsonResponse({
-            "error": "Failed to parse HF JSON",
-            "details": str(e),
-            "raw": response.text[:300]
-        }, status=500)
-
     # -------------------------------
-    # CONFIG
+    # CATEGORY LOGIC
     # -------------------------------
-    CONFIDENCE_THRESHOLD = 0.2
+    PLASTIC = ["plastic", "bottle", "bag"]
+    DRY = ["can", "metal", "paper", "cardboard"]
+    WET = ["food", "fruit", "vegetable"]
+    MEDICAL = ["mask", "syringe", "glove"]
 
-    PLASTIC = ["plastic", "bottle", "bag", "wrapper", "packet"]
-    DRY = ["can", "tin", "metal", "glass", "paper", "cardboard"]
-    WET = ["food", "vegetable", "fruit", "banana", "leftover"]
-    MEDICAL = ["medical", "syringe", "mask", "glove", "bandage"]
-
-    plastic_score = 0.0
-    dry_score = 0.0
-    wet_score = 0.0
-    medical_score = 0.0
+    scores = {
+        "Plastic Waste": 0,
+        "Dry Waste": 0,
+        "Wet Waste": 0,
+        "Medical Waste": 0
+    }
 
     labels_used = []
 
@@ -249,43 +241,25 @@ def detect_waste_type(request):
         label = item.get("label", "").lower()
         score = float(item.get("score", 0))
 
-        if score < CONFIDENCE_THRESHOLD:
-            continue
-
         labels_used.append(f"{label} ({round(score*100,2)}%)")
 
         if any(k in label for k in PLASTIC):
-            plastic_score += score * 1.2
+            scores["Plastic Waste"] += score
         elif any(k in label for k in DRY):
-            dry_score += score
+            scores["Dry Waste"] += score
         elif any(k in label for k in WET):
-            wet_score += score * 1.1
+            scores["Wet Waste"] += score
         elif any(k in label for k in MEDICAL):
-            medical_score += score * 1.5
-
-    scores = {
-        "Plastic Waste": plastic_score,
-        "Dry Waste": dry_score,
-        "Wet Waste": wet_score,
-        "Medical Waste": medical_score,
-    }
+            scores["Medical Waste"] += score
 
     best_label = max(scores, key=scores.get)
-    best_score = scores[best_label]
 
-    if best_score < 0.25:
-        final_category = "Uncertain"
-    else:
-        final_category = best_label
+    if scores[best_label] < 0.25:
+        best_label = "Uncertain"
 
     return JsonResponse({
-        "waste_type": final_category,
-        "scores": {
-            "plastic": round(plastic_score, 4),
-            "dry": round(dry_score, 4),
-            "wet": round(wet_score, 4),
-            "medical": round(medical_score, 4),
-        },
+        "waste_type": best_label,
+        "scores": {k: round(v, 4) for k, v in scores.items()},
         "labels_used": labels_used
     })
 
