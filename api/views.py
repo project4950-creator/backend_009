@@ -312,7 +312,7 @@ from bson import ObjectId
 from .models import Complaint
 
 def complaint_image(request, complaint_id, image_type):
-    complaint = Complaint.objects(id=complaint_id).first()
+    complaint = Complaint.objects(id=ObjectId(complaint_id)).first()
 
     if not complaint:
         return HttpResponse(status=404)
@@ -510,7 +510,7 @@ def assign_complaints(request):
         # 1️⃣ Get complaint (not already assigned)
 
         try:
-            cid = cid   # ✅ CRITICAL FIX
+            cid = ObjectId(cid)   # ✅ CRITICAL FIX
         except Exception:
             continue
         
