@@ -562,7 +562,6 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from .models import Complaint
 
-@api_view(["GET"])
 def karmachari_complaints(request, karmachari_id):
     try:
         karmachari_oid = ObjectId(karmachari_id)
@@ -570,7 +569,7 @@ def karmachari_complaints(request, karmachari_id):
         return Response({"message": "Invalid karmachari ID"}, status=400)
 
     complaints = Complaint.objects(
-        assigned_karmachari__id=karmachari_oid,  # <-- FIXED here
+        assigned_karmachari=karmachari_oid,
         status__in=["IN PROGRESS", "WORKING"]
     )
 
@@ -584,13 +583,10 @@ def karmachari_complaints(request, karmachari_id):
             "id": str(c.id),
             "title": c.title,
             "area": c.area,
-            "before_image_url": before_url,
-            "complaint_no": getattr(c, 'complaint_no', None),  # add complaint_no if you have it
-            "status": c.status  # optionally add status to response
+            "before_image_url": before_url
         })
 
     return Response(data)
-
 
 
 
