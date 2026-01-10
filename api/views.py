@@ -417,8 +417,8 @@ def login(request):
         })
 
     # 3️⃣ SAFAI KARMACHARI
-    karma = SafaiKarmachari.objects(phone_no=phone).first()
-   if karma and check_password(password, karma.password) and karma.username == username:
+    karma = SafaiKarmachari.objects(phone_no=phone,username=username).first()
+   if karma and check_password(password, karma.password) :
     return Response({
         "role": "SAFAI KARMCHARI",
         "user_id": str(karma.id),
@@ -427,11 +427,11 @@ def login(request):
         "redirect": "/karmachari-dashboard"
     })
 
-# 4️⃣ INVALID
-return Response(
-    {"message": "Invalid phone number, username, or password"},
-    status=401
-)
+   # 4️⃣ INVALID
+   return Response(
+      {"message": "Invalid phone number, username, or password"},
+      status=401
+    )
 
 
 from rest_framework.decorators import api_view
