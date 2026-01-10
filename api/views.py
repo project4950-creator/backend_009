@@ -503,7 +503,6 @@ from datetime import timedelta
 from .models import Complaint, SafaiKarmachari
 
 @api_view(["POST"])
-@api_view(["POST"])
 def assign_complaints(request):
     complaint_ids = request.data.get("complaint_ids", [])
     
