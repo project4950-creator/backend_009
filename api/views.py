@@ -571,7 +571,7 @@ def karmachari_complaints(request, karmachari_id):
 
     complaints = Complaint.objects(
         assigned_karmachari=karmachari_oid,
-        status__in=["IN PROGRESS", "WORKING"]
+        status="IN PROGRESS"
     )
 
     data = []
