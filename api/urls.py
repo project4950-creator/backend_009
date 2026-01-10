@@ -1,7 +1,7 @@
 from django.urls import path
 from .views import api_home, create_complaint ,detect_waste_type, download_all_images, manager_mark_completed,manager_pending_complaints,signup, login, contractor_complaints, assign_complaints, karmachari_complaints, submit_karmachari_work, complaint_image, contractor_completed_complaints, submit_to_manager
 from .views import create_complaint, citizen_complaints
-
+from . import views
 
 urlpatterns = [
     path('', api_home),
@@ -10,7 +10,7 @@ urlpatterns = [
     path("download/images/", download_all_images),
     path("signup/", signup),
     path("login/", login),
-    path("contractor/complaints/", contractor_complaints),
+    path("contractor/complaints/<str:contractor_id>/", contractor_complaints),
     path("assign-complaints/", assign_complaints),
     path("karmachari/complaints/<str:karmachari_id>/", karmachari_complaints),
     path("karmachari/submit-work/", submit_karmachari_work),
