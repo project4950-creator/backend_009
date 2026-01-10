@@ -178,8 +178,6 @@ import os
 
 HF_API_TOKEN = os.environ.get("HF_API_TOKEN")
 
-
-
 @csrf_exempt
 def detect_waste_type(request):
     if request.method != "POST":
@@ -214,55 +212,55 @@ def detect_waste_type(request):
     # -------------------------------
     # Score accumulators
     # -------------------------------
-    plastic_score = 0
-    dry_score = 0
-    wet_score = 0
-    medical_score = 0
+    scores = {
+        "Plastic Waste": 0,
+        "Dry Waste": 0,
+        "Wet Waste": 0,
+        "Medical Waste": 0,
+        "Electronic Waste": 0,
+        "Glass Waste": 0,
+        "Metal Waste": 0,
+        "Textile Waste": 0
+    }
 
     all_labels = []
 
     for item in predictions:
         label = item.get("label", "").lower()
         score = float(item.get("score", 0))
-
         all_labels.append(f"{label.title()} - {round(score * 100, 2)}")
 
-        if "plastic" in label or "packet" in label:
-            plastic_score += score
-
-        elif any(k in label for k in ["can", "ashcan", "dustbin"]):
-            dry_score += score
-
-        elif any(k in label for k in [
-            "food", "fruit", "vegetable", "cabbage", "plate", "hot pot"
-        ]):
-            wet_score += score
-
-        elif any(k in label for k in ["medical", "syringe", "mask"]):
-            medical_score += score
+        # -------------------------------
+        # Keyword mapping to categories
+        # -------------------------------
+        if any(k in label for k in ["plastic", "packet", "wrapper", "bag"]):
+            scores["Plastic Waste"] += score
+        elif any(k in label for k in ["can", "dustbin", "paper", "cardboard"]):
+            scores["Dry Waste"] += score
+        elif any(k in label for k in ["food", "fruit", "vegetable", "plate", "hot pot", "leftover"]):
+            scores["Wet Waste"] += score
+        elif any(k in label for k in ["medical", "syringe", "mask", "glove"]):
+            scores["Medical Waste"] += score
+        elif any(k in label for k in ["phone", "battery", "circuit", "charger", "electronics"]):
+            scores["Electronic Waste"] += score
+        elif any(k in label for k in ["glass", "bottle", "jar"]):
+            scores["Glass Waste"] += score
+        elif any(k in label for k in ["metal", "can", "foil"]):
+            scores["Metal Waste"] += score
+        elif any(k in label for k in ["cloth", "fabric", "shirt", "textile"]):
+            scores["Textile Waste"] += score
 
     # -------------------------------
-    # Final category decision
+    # Determine final category
     # -------------------------------
-    if plastic_score >= dry_score and plastic_score >= wet_score and plastic_score >= medical_score:
-        category = "Plastic Waste"
-    elif dry_score >= wet_score and dry_score >= medical_score:
-        category = "Dry Waste"
-    elif wet_score >= medical_score:
-        category = "Wet Waste"
-    else:
-        category = "Medical Waste"
+    category = max(scores, key=lambda k: scores[k])
 
     return JsonResponse({
         "waste_type": category,
-        "debug_scores": {
-            "plastic": round(plastic_score, 4),
-            "dry": round(dry_score, 4),
-            "wet": round(wet_score, 4),
-            "medical": round(medical_score, 4)
-        },
+        "debug_scores": {k: round(v, 4) for k, v in scores.items()},
         "labels_detected": all_labels
     })
+
 
 
 
