@@ -167,104 +167,86 @@ def create_complaint(request):
     
 
 
-import os
-import time
-import requests
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-
-HF_MODEL_URL = "https://router.huggingface.co/hf-inference/models/nateraw/mobilenetv2-trash-classification"
-HF_API_TOKEN = os.environ.get("HF_API_TOKEN")
-
-HEADERS = {
-    "Authorization": f"Bearer {HF_API_TOKEN}",
-    "Accept": "application/json"
-}
-
 @csrf_exempt
 def detect_waste_type(request):
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
 
     if "image" not in request.FILES:
-        return JsonResponse({"error": "Image file required"}, status=400)
+        return JsonResponse({"error": "Image required"}, status=400)
 
     image = request.FILES["image"]
 
-    def call_hf():
-        return requests.post(
-            HF_MODEL_URL,
-            headers=HEADERS,
-            files={"file": image},
-            timeout=25
-        )
+    HF_MODEL_URL = "https://router.huggingface.co/hf-inference/models/facebook/owlvit-base-patch32"
 
-    # 🔁 First attempt
-    response = call_hf()
-
-    # 🔁 HF cold-start retry
-    if response.status_code == 503:
-        time.sleep(3)
-        response = call_hf()
-
-    content_type = response.headers.get("content-type", "")
-
-    # ❌ NOT JSON → return safe error
-    if "application/json" not in content_type:
-        return JsonResponse({
-            "error": "HF returned non-JSON response",
-            "status_code": response.status_code,
-            "content_type": content_type,
-            "preview": response.text[:300]
-        }, status=500)
-
-    # ✅ SAFE JSON PARSE
-    try:
-        predictions = response.json()
-    except Exception as e:
-        return JsonResponse({
-            "error": "JSON parse failed",
-            "details": str(e)
-        }, status=500)
-
-    # ---------------------------
-    # CLASSIFICATION LOGIC
-    # ---------------------------
-    plastic = dry = wet = medical = 0.0
-
-    for p in predictions:
-        label = p.get("label", "").lower()
-        score = float(p.get("score", 0))
-
-        if score < 0.15:
-            continue
-
-        if "plastic" in label:
-            plastic += score
-        elif "paper" in label or "cardboard" in label:
-            dry += score
-        elif "food" in label or "organic" in label:
-            wet += score
-        elif "medical" in label or "mask" in label:
-            medical += score
-
-    scores = {
-        "Plastic Waste": round(plastic, 4),
-        "Dry Waste": round(dry, 4),
-        "Wet Waste": round(wet, 4),
-        "Medical Waste": round(medical, 4)
+    headers = {
+        "Authorization": f"Bearer {HF_API_TOKEN}"
     }
 
-    best = max(scores, key=scores.get)
+    payload = {
+        "inputs": {
+            "image": image.read(),
+            "text_queries": [
+                "plastic waste",
+                "food waste",
+                "vegetable waste",
+                "paper waste",
+                "metal waste",
+                "medical waste",
+                "syringe",
+                "medical mask",
+                "gloves",
+                "glass waste"
+            ]
+        }
+    }
 
-    if scores[best] == 0:
-        best = "Uncertain"
+    response = requests.post(
+        HF_MODEL_URL,
+        headers=headers,
+        json=payload,
+        timeout=60
+    )
+
+    if response.status_code != 200:
+        return JsonResponse({"error": "HF API failed", "details": response.text}, status=500)
+
+    detections = response.json()
+
+    scores = {
+        "plastic": 0,
+        "wet": 0,
+        "dry": 0,
+        "medical": 0
+    }
+
+    objects = []
+
+    for d in detections:
+        label = d["label"].lower()
+        score = float(d["score"])
+
+        objects.append({
+            "label": label,
+            "score": round(score, 3)
+        })
+
+        if "medical" in label or "syringe" in label or "mask" in label or "glove" in label:
+            scores["medical"] += score
+        elif "plastic" in label:
+            scores["plastic"] += score
+        elif "food" in label or "vegetable" in label:
+            scores["wet"] += score
+        else:
+            scores["dry"] += score
+
+    final_type = max(scores, key=scores.get).title() + " Waste"
 
     return JsonResponse({
-        "waste_type": best,
-        "scores": scores
+        "final_waste_type": final_type,
+        "objects_detected": objects,
+        "category_scores": {k: round(v, 3) for k, v in scores.items()}
     })
-
 
 
 
