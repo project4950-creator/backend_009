@@ -416,21 +416,25 @@ def login(request):
             "redirect": redirect_map.get(staff.user_role)
         })
 
-    # 3️⃣ SAFAI KARMACHARI
-    karma = SafaiKarmachari.objects(phone_no=phone,username=username).first()
-   if karma and check_password(password, karma.password) :
-    return Response({
-        "role": "SAFAI KARMCHARI",
-        "user_id": str(karma.id),
-        "name": karma.username,
-        "area": karma.area,
-        "redirect": "/karmachari-dashboard"
-    })
+    # 3️⃣ SAFAI KARMACHARI ✅ FIXED
+    karma = SafaiKarmachari.objects(
+        phone_no=phone,
+        username=username
+    ).first()
 
-   # 4️⃣ INVALID
-   return Response(
-      {"message": "Invalid phone number, username, or password"},
-      status=401
+    if karma and check_password(password, karma.password):
+        return Response({
+            "role": "SAFAI KARMCHARI",
+            "user_id": str(karma.id),
+            "name": karma.username,
+            "area": karma.area,
+            "redirect": "/karmachari-dashboard"
+        })
+
+    # 4️⃣ INVALID
+    return Response(
+        {"message": "Invalid phone number, username, or password"},
+        status=401
     )
 
 
