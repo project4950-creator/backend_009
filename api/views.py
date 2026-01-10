@@ -119,7 +119,7 @@ def create_complaint(request):
     normalized_area = normalize_area(area)
 
     contractor = StaffUser.objects(
-        user_role="CONTRACTOR").filter(
+        user.role="CONTRACTOR").filter(
         assigned_area__icontains=normalized_area
     ).first()
 
