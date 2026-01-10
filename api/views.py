@@ -193,6 +193,7 @@ def detect_waste_type(request):
         "Content-Type": image_file.content_type or "image/jpeg"
     }
 
+    # Call Hugging Face API
     response = requests.post(
         HF_MODEL_URL,
         headers=headers,
@@ -202,99 +203,56 @@ def detect_waste_type(request):
 
     if response.status_code != 200:
         return JsonResponse(
-            {"error": "Hugging Face API failed"},
+            {"error": "Hugging Face API failed", "details": response.text},
             status=500
         )
 
-    try:
-        predictions = response.json()
-    except Exception:
-        return JsonResponse(
-            {"error": "Invalid HF response"},
-            status=500
-        )
+    predictions = response.json()
 
     # -------------------------------
-    # CONFIG (tuneable)
+    # Category keywords mapping
     # -------------------------------
-    MIN_CONFIDENCE = 0.25        # ⬅️ ignore weak guesses
-    STRONG_CONFIDENCE = 0.55     # ⬅️ dominant label
-
-    CATEGORY_RULES = {
-        "Plastic Waste": {
-            "keywords": ["plastic", "packet", "wrapper", "bag", "polythene"],
-            "weight": 1.3
-        },
-        "Dry Waste": {
-            "keywords": ["paper", "cardboard", "can", "tin", "metal"],
-            "weight": 1.0
-        },
-        "Wet Waste": {
-            "keywords": ["food", "fruit", "vegetable", "plate", "leftover"],
-            "weight": 1.2
-        },
-        "Medical Waste": {
-            "keywords": ["syringe", "mask", "glove", "medical"],
-            "weight": 1.6
-        },
-        "Electronic Waste": {
-            "keywords": ["phone", "battery", "charger", "circuit"],
-            "weight": 1.5
-        },
-        "Glass Waste": {
-            "keywords": ["glass", "jar", "bottle"],
-            "weight": 1.1
-        },
-        "Textile Waste": {
-            "keywords": ["cloth", "fabric", "shirt", "textile"],
-            "weight": 1.0
-        }
+    CATEGORY_KEYWORDS = {
+        "Plastic Waste": ["plastic", "wrapper", "bag", "packet", "bottle"],
+        "Dry Waste": ["paper", "cardboard", "can", "dustbin", "box"],
+        "Wet Waste": ["food", "fruit", "vegetable", "leftover", "plate", "hot pot"],
+        "Medical Waste": ["syringe", "mask", "glove", "medical", "bandage"],
+        "Electronic Waste": ["phone", "battery", "circuit", "charger", "electronics"],
+        "Glass Waste": ["glass", "bottle", "jar", "cup"],
+        "Metal Waste": ["metal", "can", "foil", "tin"],
+        "Textile Waste": ["cloth", "fabric", "shirt", "textile"]
     }
 
-    scores = {k: 0.0 for k in CATEGORY_RULES}
-    labels_used = []
+    scores = {cat: 0 for cat in CATEGORY_KEYWORDS.keys()}
+    all_labels = []
 
     # -------------------------------
-    # Process predictions
+    # Map labels to all matching categories
     # -------------------------------
     for item in predictions:
         label = item.get("label", "").lower()
-        confidence = float(item.get("score", 0))
+        score = float(item.get("score", 0))
+        all_labels.append(f"{label.title()} - {round(score * 100, 2)}")
 
-        if confidence < MIN_CONFIDENCE:
-            continue  # ❌ ignore noise
-
-        labels_used.append(f"{label} ({round(confidence*100,2)}%)")
-
-        for category, rule in CATEGORY_RULES.items():
-            if any(k in label for k in rule["keywords"]):
-                scores[category] += confidence * rule["weight"]
+        # Add score to all categories this label belongs to
+        for category, keywords in CATEGORY_KEYWORDS.items():
+            if any(kw in label for kw in keywords):
+                scores[category] += score
 
     # -------------------------------
-    # Decision logic
+    # Final decision: highest scoring category
     # -------------------------------
-    sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    category = max(scores, key=lambda k: scores[k])
 
-    best_label, best_score = sorted_scores[0]
-    second_score = sorted_scores[1][1]
-
-    # ❌ No confident result
-    if best_score == 0:
-        final_category = "Uncertain"
-
-    # ❌ Too close → unreliable
-    elif (best_score - second_score) < 0.15:
-        final_category = "Uncertain"
-
-    # ✅ Strong winner
-    else:
-        final_category = best_label
+    # Optionally return top 2-3 categories for mixed waste
+    top_categories = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    top_categories = [cat for cat, s in top_categories if s > 0][:3]
 
     return JsonResponse({
-        "waste_type": final_category,
-        "confidence_score": round(best_score, 4),
+        "waste_type": category,
+        "top_categories": top_categories,
         "debug_scores": {k: round(v, 4) for k, v in scores.items()},
-        "labels_detected": labels_used
+        "labels_detected": all_labels
     })
 
 
