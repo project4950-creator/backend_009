@@ -165,13 +165,20 @@ def create_complaint(request):
 
 
     
+
+
+
 import os
-import base64
 import requests
-from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+
+HF_MODEL_URL = "https://router.huggingface.co/hf-inference/models/WinKawaks/vit-tiny-patch16-224"
+import os
 
 HF_API_TOKEN = os.environ.get("HF_API_TOKEN")
+
+
 
 @csrf_exempt
 def detect_waste_type(request):
@@ -183,88 +190,79 @@ def detect_waste_type(request):
 
     image_file = request.FILES["image"]
 
-    # Read image bytes and convert to base64
-    image_bytes = image_file.read()
-    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-
-    # Hugging Face Inference API endpoint (REST)
-    HF_MODEL_URL = "https://api-inference.huggingface.co/models/facebook/owlvit-base-patch32"
-
     headers = {
         "Authorization": f"Bearer {HF_API_TOKEN}",
-        "Content-Type": "application/json"
+        "Content-Type": image_file.content_type or "image/jpeg"
     }
 
-    payload = {
-        "inputs": {
-            "image": image_base64,
-            "text_queries": [
-                "plastic waste",
-                "food waste",
-                "vegetable waste",
-                "paper waste",
-                "metal waste",
-                "medical waste",
-                "syringe",
-                "medical mask",
-                "gloves",
-                "glass waste"
-            ]
-        }
-    }
-
-    try:
-        response = requests.post(
-            HF_MODEL_URL,
-            headers=headers,
-            json=payload,
-            timeout=60
-        )
-    except requests.exceptions.RequestException as e:
-        return JsonResponse({"error": "HF API request failed", "details": str(e)}, status=500)
+    # Call Hugging Face API
+    response = requests.post(
+        HF_MODEL_URL,
+        headers=headers,
+        data=image_file.read(),
+        timeout=30
+    )
 
     if response.status_code != 200:
-        return JsonResponse({"error": "HF API failed", "details": response.text}, status=500)
+        return JsonResponse(
+            {"error": "Hugging Face API failed", "details": response.text},
+            status=500
+        )
 
-    try:
-        detections = response.json()
-    except ValueError:
-        return JsonResponse({"error": "HF API returned invalid JSON"}, status=500)
+    predictions = response.json()
 
-    # Initialize category scores
-    scores = {
-        "plastic": 0,
-        "wet": 0,
-        "dry": 0,
-        "medical": 0
-    }
+    # -------------------------------
+    # Score accumulators
+    # -------------------------------
+    plastic_score = 0
+    dry_score = 0
+    wet_score = 0
+    medical_score = 0
 
-    objects = []
+    all_labels = []
 
-    for item in detections:
+    for item in predictions:
         label = item.get("label", "").lower()
         score = float(item.get("score", 0))
-        objects.append({"label": label.title(), "score": round(score, 3)})
 
-        # Categorize detected objects
-        if any(k in label for k in ["medical", "syringe", "mask", "glove"]):
-            scores["medical"] += score
-        elif "plastic" in label:
-            scores["plastic"] += score
-        elif any(k in label for k in ["food", "vegetable"]):
-            scores["wet"] += score
-        else:
-            scores["dry"] += score
+        all_labels.append(f"{label.title()} - {round(score * 100, 2)}")
 
-    # Determine final waste type
-    final_type = max(scores, key=scores.get).title() + " Waste"
+        if "plastic" in label or "packet" in label:
+            plastic_score += score
+
+        elif any(k in label for k in ["can", "ashcan", "dustbin"]):
+            dry_score += score
+
+        elif any(k in label for k in [
+            "food", "fruit", "vegetable", "cabbage", "plate", "hot pot"
+        ]):
+            wet_score += score
+
+        elif any(k in label for k in ["medical", "syringe", "mask"]):
+            medical_score += score
+
+    # -------------------------------
+    # Final category decision
+    # -------------------------------
+    if plastic_score >= dry_score and plastic_score >= wet_score and plastic_score >= medical_score:
+        category = "Plastic Waste"
+    elif dry_score >= wet_score and dry_score >= medical_score:
+        category = "Dry Waste"
+    elif wet_score >= medical_score:
+        category = "Wet Waste"
+    else:
+        category = "Medical Waste"
 
     return JsonResponse({
-        "final_waste_type": final_type,
-        "objects_detected": objects,
-        "category_scores": {k: round(v, 3) for k, v in scores.items()}
+        "waste_type": category,
+        "debug_scores": {
+            "plastic": round(plastic_score, 4),
+            "dry": round(dry_score, 4),
+            "wet": round(wet_score, 4),
+            "medical": round(medical_score, 4)
+        },
+        "labels_detected": all_labels
     })
-
 
 
 
