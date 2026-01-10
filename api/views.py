@@ -166,94 +166,104 @@ def create_complaint(request):
 
     
 import os
-import time
+import base64
 import requests
-from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
 
-HF_MODEL_URL = "https://router.huggingface.co/hf-inference/models/keremberke/yolov8n-waste-detection"
 HF_API_TOKEN = os.environ.get("HF_API_TOKEN")
-
-HEADERS = {
-    "Authorization": f"Bearer {HF_API_TOKEN}",
-    "Accept": "application/json",
-}
 
 @csrf_exempt
 def detect_waste_type(request):
-    try:
-        if request.method != "POST":
-            return JsonResponse({"error": "POST required"}, status=405)
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
 
-        if "image" not in request.FILES:
-            return JsonResponse({"error": "Image file required"}, status=400)
+    if "image" not in request.FILES:
+        return JsonResponse({"error": "Image file required"}, status=400)
 
-        image = request.FILES["image"]
+    image_file = request.FILES["image"]
 
-        def call_hf():
-            return requests.post(
-                HF_MODEL_URL,
-                headers=HEADERS,
-                files={"file": image},
-                timeout=30
-            )
+    # Read image bytes and convert to base64
+    image_bytes = image_file.read()
+    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
 
-        response = call_hf()
+    # Hugging Face Inference API endpoint (REST)
+    HF_MODEL_URL = "https://api-inference.huggingface.co/models/facebook/owlvit-base-patch32"
 
-        # Retry once if model is cold
-        if response.status_code == 503:
-            time.sleep(3)
-            response = call_hf()
+    headers = {
+        "Authorization": f"Bearer {HF_API_TOKEN}",
+        "Content-Type": "application/json"
+    }
 
-        # ❌ HF returned HTML / text
-        if "application/json" not in response.headers.get("content-type", ""):
-            return JsonResponse({
-                "error": "HF returned non-JSON",
-                "status": response.status_code
-            }, status=500)
-
-        predictions = response.json()
-
-        plastic = dry = wet = medical = 0.0
-
-        for p in predictions:
-            label = p.get("label", "").lower()
-            score = float(p.get("score", 0))
-
-            if score < 0.15:
-                continue
-
-            if "plastic" in label:
-                plastic += score
-            elif any(k in label for k in ["paper", "metal", "glass"]):
-                dry += score
-            elif any(k in label for k in ["food", "fruit", "vegetable"]):
-                wet += score
-            elif any(k in label for k in ["mask", "syringe", "medical"]):
-                medical += score
-
-        scores = {
-            "Plastic Waste": round(plastic, 4),
-            "Dry Waste": round(dry, 4),
-            "Wet Waste": round(wet, 4),
-            "Medical Waste": round(medical, 4),
+    payload = {
+        "inputs": {
+            "image": image_base64,
+            "text_queries": [
+                "plastic waste",
+                "food waste",
+                "vegetable waste",
+                "paper waste",
+                "metal waste",
+                "medical waste",
+                "syringe",
+                "medical mask",
+                "gloves",
+                "glass waste"
+            ]
         }
+    }
 
-        best = max(scores, key=scores.get)
-        if scores[best] == 0:
-            best = "Uncertain"
+    try:
+        response = requests.post(
+            HF_MODEL_URL,
+            headers=headers,
+            json=payload,
+            timeout=60
+        )
+    except requests.exceptions.RequestException as e:
+        return JsonResponse({"error": "HF API request failed", "details": str(e)}, status=500)
 
-        return JsonResponse({
-            "waste_type": best,
-            "scores": scores
-        })
+    if response.status_code != 200:
+        return JsonResponse({"error": "HF API failed", "details": response.text}, status=500)
 
-    except Exception as e:
-        # 🔥 ABSOLUTE SAFETY NET
-        return JsonResponse({
-            "error": "Server crash prevented",
-            "details": str(e)
-        }, status=500)
+    try:
+        detections = response.json()
+    except ValueError:
+        return JsonResponse({"error": "HF API returned invalid JSON"}, status=500)
+
+    # Initialize category scores
+    scores = {
+        "plastic": 0,
+        "wet": 0,
+        "dry": 0,
+        "medical": 0
+    }
+
+    objects = []
+
+    for item in detections:
+        label = item.get("label", "").lower()
+        score = float(item.get("score", 0))
+        objects.append({"label": label.title(), "score": round(score, 3)})
+
+        # Categorize detected objects
+        if any(k in label for k in ["medical", "syringe", "mask", "glove"]):
+            scores["medical"] += score
+        elif "plastic" in label:
+            scores["plastic"] += score
+        elif any(k in label for k in ["food", "vegetable"]):
+            scores["wet"] += score
+        else:
+            scores["dry"] += score
+
+    # Determine final waste type
+    final_type = max(scores, key=scores.get).title() + " Waste"
+
+    return JsonResponse({
+        "final_waste_type": final_type,
+        "objects_detected": objects,
+        "category_scores": {k: round(v, 3) for k, v in scores.items()}
+    })
 
 
 
