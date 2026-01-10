@@ -173,7 +173,8 @@ import requests
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-HF_MODEL_URL = "https://router.huggingface.co/hf-inference/models/WinKawaks/vit-tiny-patch16-224"
+HF_MODEL_URL = "https://router.huggingface.co/hf-inference/models/keremberke/yolov8n-waste-detection"
+
 import os
 
 HF_API_TOKEN = os.environ.get("HF_API_TOKEN")
@@ -195,7 +196,6 @@ def detect_waste_type(request):
         "Content-Type": image_file.content_type or "image/jpeg"
     }
 
-    # Call Hugging Face API
     response = requests.post(
         HF_MODEL_URL,
         headers=headers,
@@ -212,56 +212,76 @@ def detect_waste_type(request):
     predictions = response.json()
 
     # -------------------------------
+    # CONFIG
+    # -------------------------------
+    CONFIDENCE_THRESHOLD = 0.15
+
+    PLASTIC_KEYWORDS = ["plastic", "bottle", "bag", "wrapper", "packet", "polythene"]
+    DRY_KEYWORDS = ["can", "tin", "metal", "glass", "paper", "cardboard"]
+    WET_KEYWORDS = ["food", "vegetable", "fruit", "banana", "leftover", "plate"]
+    MEDICAL_KEYWORDS = ["medical", "syringe", "mask", "glove", "bandage"]
+
+    # -------------------------------
     # Score accumulators
     # -------------------------------
-    plastic_score = 0
-    dry_score = 0
-    wet_score = 0
-    medical_score = 0
+    plastic_score = 0.0
+    dry_score = 0.0
+    wet_score = 0.0
+    medical_score = 0.0
 
-    all_labels = []
+    labels_used = []
 
     for item in predictions:
         label = item.get("label", "").lower()
         score = float(item.get("score", 0))
 
-        all_labels.append(f"{label.title()} - {round(score * 100, 2)}")
+        # ❌ ignore low confidence predictions
+        if score < CONFIDENCE_THRESHOLD:
+            continue
 
-        if "plastic" in label or "packet" in label:
-            plastic_score += score
+        labels_used.append(f"{label} ({round(score*100,2)}%)")
 
-        elif any(k in label for k in ["can", "ashcan", "dustbin"]):
+        if any(k in label for k in PLASTIC_KEYWORDS):
+            plastic_score += score * 1.2
+
+        elif any(k in label for k in DRY_KEYWORDS):
             dry_score += score
 
-        elif any(k in label for k in [
-            "food", "fruit", "vegetable", "cabbage", "plate", "hot pot"
-        ]):
-            wet_score += score
+        elif any(k in label for k in WET_KEYWORDS):
+            wet_score += score * 1.1
 
-        elif any(k in label for k in ["medical", "syringe", "mask"]):
-            medical_score += score
+        elif any(k in label for k in MEDICAL_KEYWORDS):
+            medical_score += score * 1.5
 
     # -------------------------------
-    # Final category decision
+    # Final decision
     # -------------------------------
-    if plastic_score >= dry_score and plastic_score >= wet_score and plastic_score >= medical_score:
-        category = "Plastic Waste"
-    elif dry_score >= wet_score and dry_score >= medical_score:
-        category = "Dry Waste"
-    elif wet_score >= medical_score:
-        category = "Wet Waste"
+    scores = {
+        "Plastic Waste": plastic_score,
+        "Dry Waste": dry_score,
+        "Wet Waste": wet_score,
+        "Medical Waste": medical_score
+    }
+
+    sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    best_label, best_score = sorted_scores[0]
+    second_score = sorted_scores[1][1]
+
+    # ❗ Safety check
+    if best_score < 0.2 or (best_score - second_score) < 0.05:
+        final_category = "Uncertain"
     else:
-        category = "Medical Waste"
+        final_category = best_label
 
     return JsonResponse({
-        "waste_type": category,
-        "debug_scores": {
+        "waste_type": final_category,
+        "scores": {
             "plastic": round(plastic_score, 4),
             "dry": round(dry_score, 4),
             "wet": round(wet_score, 4),
             "medical": round(medical_score, 4)
         },
-        "labels_detected": all_labels
+        "labels_used": labels_used
     })
 
 
