@@ -165,6 +165,7 @@ def create_complaint(request):
 
 
     
+from django.views.decorators.csrf import csrf_exempt
 
 
 @csrf_exempt
